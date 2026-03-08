@@ -13,6 +13,10 @@ import { parseOff } from "../io/import_off.ts";
 import { exportGlb } from "../io/export_glb.ts";
 import { export3MF } from "../io/export_3mf.ts";
 import chroma from "chroma-js";
+// ------ 
+import { getProject, listProjects, upsertProject, deleteProject,ProjectData } from "./project.ts";
+import { v4 as uuidv4 } from "uuid";
+//---
 
 const githubRx = /^https:\/\/github.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/;
 
@@ -305,28 +309,58 @@ export class Model {
       });
     }
   }
+  
+async saveProject() {
+  const now = new Date().toISOString();
+  const name =
+    this.state.params.projectName ??
+    this.state.params.activePath.split("/").pop() ??
+    "Untitled";
 
-  async saveProject() {
-    if (this.state.params.sources.length == 1) {
-      const content = this.state.params.sources[0].content;
-      const contentBytes = new TextEncoder().encode(content);
-      const blob = new Blob([contentBytes], {type: 'text/plain'});
-      const file = new File([blob], this.state.params.activePath.split('/').pop()!);
-      downloadUrl(URL.createObjectURL(file), file.name);
-    } else {
-      const zip = new JSZip();
-      for (const source of this.state.params.sources) {
-        let path = source.path
-        if (path.startsWith('/')) {
-          path = path.substring(1);
-        }
-        zip.file(path, await fetchSource(this.fs, source));
-      }
-      zip.generateAsync({type: 'blob'}).then(blob => {
-        const file = new File([blob], 'project.zip');
-        downloadUrl(URL.createObjectURL(file), file.name);
-      });
-    }
+  const project: ProjectData = {
+    id: this.state.params.projectId ?? uuidv4(),
+    name,
+    sources: this.state.params.sources,
+    activePath: this.state.params.activePath,
+    createdAt: this.state.params.projectCreatedAt ?? now,
+    updatedAt: now,
+  };
+
+  upsertProject(project);
+
+  this.mutate(s => {
+    s.params.projectId = project.id;
+    s.params.projectName = project.name;
+    s.params.projectCreatedAt = project.createdAt;
+    s.params.projectUpdatedAt = project.updatedAt;
+  });
+}
+
+
+
+  loadProject(id: string) {
+    const p = getProject(id);
+    if (!p) return;
+
+    this.mutate(s => {
+      s.params.sources = p.sources;
+      s.params.activePath = p.activePath;
+      s.params.projectId = p.id;
+      s.params.projectName = p.name;
+      s.params.projectCreatedAt = p.createdAt;
+      s.params.projectUpdatedAt = p.updatedAt;
+
+      // Output/Logs zurücksetzen, damit es sauber neu rendert
+      s.lastCheckerRun = undefined;
+      s.output = undefined;
+      s.export = undefined;
+      s.preview = undefined;
+      s.currentRunLogs = undefined;
+      s.error = undefined;
+      s.is2D = undefined;
+    });
+
+    this.processSource();
   }
 
   async render({isPreview, mountArchives, now, retryInOtherDim}: {isPreview: boolean, mountArchives?: boolean, now: boolean, retryInOtherDim?: boolean}) {

@@ -11,7 +11,10 @@ import { Menu } from 'primereact/menu';
 import { buildUrlForStateParams } from '../state/fragment-state.ts';
 import { getBlankProjectState, defaultSourcePath } from '../state/initial-state.ts';
 import { ModelContext, FSContext } from './contexts.ts';
-import FilePicker, {  } from './FilePicker.tsx';
+import FilePicker, { } from './FilePicker.tsx';
+
+import {ProjectPicker }  from './ProjectPicker.tsx';
+import { listProjects, deleteProject } from '../state/project.ts';
 
 // const isMonacoSupported = false;
 const isMonacoSupported = (() => {
@@ -26,7 +29,7 @@ if (isMonacoSupported) {
   loader.init().then(mi => monacoInstance = mi);
 }
 
-export default function EditorPanel({className, style}: {className?: string, style?: CSSProperties}) {
+export default function EditorPanel({ className, style }: { className?: string, style?: CSSProperties }) {
 
   const model = useContext(ModelContext);
   if (!model) throw new Error('No model');
@@ -46,23 +49,56 @@ export default function EditorPanel({className, style}: {className?: string, sty
       }
     }
   }
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const [projectDialogVisible, setProjectDialogVisible] = useState(false);
+  const [projects, setProjects] = useState(listProjects());
+
+  const refreshProjects = () => setProjects(listProjects());
+
+  const onOpenProjectDialog = () => {
+    refreshProjects();
+    setProjectDialogVisible(true);
+  };
+
+  const handleOpenProject = (id: string) => {
+    model.loadProject(id);
+    setProjectDialogVisible(false);
+  };
+
+  const handleDeleteProject = (id: string) => {
+    deleteProject(id);
+    refreshProjects();
+  };
+
+
+const handleCreateFromCurrent = () => {
+  model.mutate(s => {
+    s.params.projectName = newProjectName || "Untitled";
+    s.params.projectId = undefined;
+  });
+  model.saveProject();
+  setNewProjectName("");
+  refreshProjects();
+};
+
 
   const onMount = (editor: monaco.editor.IStandaloneCodeEditor) => {
     editor.addAction({
       id: "openscad-render",
       label: "Render OpenSCAD",
-      run: () => model.render({isPreview: false, now: true})
+      run: () => model.render({ isPreview: false, now: true })
     });
     editor.addAction({
       id: "openscad-preview",
       label: "Preview OpenSCAD",
-      run: () => model.render({isPreview: true, now: true})
+      run: () => model.render({ isPreview: true, now: true })
     });
     editor.addAction({
       id: "openscad-save-do-nothing",
       label: "Save (disabled)",
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => {}
+      run: () => { }
     });
     editor.addAction({
       id: "openscad-save-project",
@@ -85,7 +121,7 @@ export default function EditorPanel({className, style}: {className?: string, sty
       <div className='flex flex-row gap-2' style={{
         margin: '5px',
       }}>
-          
+
         <Menu model={[
           {
             label: "New project",
@@ -101,8 +137,23 @@ export default function EditorPanel({className, style}: {className?: string, sty
             disabled: true,
           },
           {
+            label: "New new project",
+            icon: 'pi pi-plus-circle',
+            command: () => onOpenProjectDialog(),
+          },
+          {
+            label: "Open project…",
+            icon: "pi pi-folder-open",
+            command: () => onOpenProjectDialog(),
+          },
+          {
+            label: "Save project",
+            icon: "pi pi-save",
+            command: () => model.saveProject(),
+          },
+          {
             separator: true
-          },  
+          },
           {
             // TODO: popup to ask for file name
             label: "New file",
@@ -145,21 +196,21 @@ export default function EditorPanel({className, style}: {className?: string, sty
           },
         ] as MenuItem[]} popup ref={menu} />
         <Button title="Editor menu" rounded text icon="pi pi-ellipsis-h" onClick={(e) => menu.current && menu.current.toggle(e)} />
-        
-        <FilePicker 
-            style={{
-              flex: 1,
-            }}/>
 
-        {state.params.activePath !== defaultSourcePath && 
-          <Button icon="pi pi-chevron-left" 
-          text
-          onClick={() => model.openFile(defaultSourcePath)} 
-          title={`Go back to ${defaultSourcePath}`}/>}
+        <FilePicker
+          style={{
+            flex: 1,
+          }} />
+
+        {state.params.activePath !== defaultSourcePath &&
+          <Button icon="pi pi-chevron-left"
+            text
+            onClick={() => model.openFile(defaultSourcePath)}
+            title={`Go back to ${defaultSourcePath}`} />}
 
       </div>
 
-      
+
       <div style={{
         position: 'relative',
         flex: 1
@@ -180,13 +231,23 @@ export default function EditorPanel({className, style}: {className?: string, sty
           />
         )}
         {!isMonacoSupported && (
-          <InputTextarea 
+          <InputTextarea
             className="openscad-editor absolute-fill"
             value={model.source}
-            onChange={s => model.source = s.target.value ?? ''}  
+            onChange={s => model.source = s.target.value ?? ''}
           />
         )}
       </div>
+<ProjectPicker
+  visible={projectDialogVisible}
+  newProjectName={newProjectName}
+  projects={projects}
+  onHide={() => setProjectDialogVisible(false)}
+  onChangeProjectName={setNewProjectName}
+  onCreateFromCurrent={handleCreateFromCurrent}
+  onOpenProject={handleOpenProject}
+  onDeleteProject={handleDeleteProject}
+/>
 
       <div style={{
         display: state.view.logs ? undefined : 'none',
@@ -197,7 +258,7 @@ export default function EditorPanel({className, style}: {className?: string, sty
           <pre key={i}>{text}</pre>
         ))}
       </div>
-    
+
     </div>
   )
 }
